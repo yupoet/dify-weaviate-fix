@@ -2,6 +2,32 @@
 
 [English Version](./fix-weaviate-after-upgrade-en.md)
 
+---
+
+## ⚠️ 重要提示：已有官方方案
+
+**本方案是一个简化的快速修复方法。** 官方提供了保留数据的完整迁移指南：
+
+- 📖 [官方迁移指南 (Dify Docs)](https://docs.dify.ai/en/learn-more/faq/install-faq/weaviate-migration-guide)
+- 📜 [官方迁移脚本](https://github.com/langgenius/dify-docs/blob/main/assets/migrate_weaviate_collections.py)
+- 📝 [社区简化指南 (by @kurokobo)](https://gist.github.com/kurokobo/51fbe7f92f4526957e12dacfa7783cdf)
+
+### 方案对比
+
+| | 官方方案 | 本方案 |
+|---|---|---|
+| **方法** | 迁移数据（保留向量） | 重建schema + 重新嵌入 |
+| **保留向量数据** | ✅ 是 | ❌ 否 |
+| **适用场景** | 大型数据集、生产环境 | 小型数据集、开发测试环境 |
+| **复杂度** | 较高 | 较低 |
+
+**选择本方案的情况：**
+- 知识库数量较少的小型部署
+- 本来就想切换 embedding 模型
+- 可以接受重新嵌入的时间/成本
+
+---
+
 ## 问题描述
 
 将 Dify 从旧版本（如 1.8.x、1.10.x）升级到新版本（如 1.11.0+）后，在知识库中测试召回/检索时可能遇到以下错误：
@@ -11,8 +37,6 @@ Query call with protocol GRPC search failed with message extract target vectors:
 Vector_index_XXXXXXXX_XXXX_XXXX_XXXX_XXXXXXXXXXXX_Node does not have named vector default 
 configured. Available named vectors map[].
 ```
-
-![错误截图](https://your-screenshot-url.png)
 
 ## 根本原因
 
@@ -52,15 +76,15 @@ Dify 升级后期望使用新的 `vectorConfig` 格式，但升级前创建的�
 }
 ```
 
-## 解决方案概述
+## 解决方案概述（快速修复方法）
 
-修复分为三个步骤：
+本方案分为三个步骤：
 
 1. **识别** 受影响的 collections（旧格式）
-2. **重建** 使用新 schema 格式的 collections
+2. **重建** 使用新 schema 格式的 collections（数据会被清除）
 3. **重新嵌入** Dify 中的文档以重新填充向量数据
 
-> ⚠️ **重要提示**：此过程会清除受影响 collections 中的向量数据。修复 schema 后必须在 Dify 中重新嵌入文档。
+> ⚠️ **重要提示**：此方法会清除向量数据，之后必须重新嵌入文档。如果需要保留向量数据，请使用[官方迁移指南](https://docs.dify.ai/en/learn-more/faq/install-faq/weaviate-migration-guide)。
 
 ---
 
@@ -81,8 +105,6 @@ docker exec docker-api-1 env | grep -i weaviate
 在输出中找到 `WEAVIATE_API_KEY`，修复脚本需要使用它。
 
 ### 步骤 2：扫描受影响的 Collections
-
-首先查看哪些 collections 需要修复：
 
 ```bash
 # 下载修复脚本
@@ -126,8 +148,6 @@ docker exec -it docker-api-1 python /tmp/batch_fix_weaviate.py fix
 
 ### 步骤 5：获取知识库名称
 
-脚本输出的是 dataset IDs。要在 Dify 中找到实际名称：
-
 ```bash
 docker exec docker-db-1 psql -U postgres -d dify -c "
 SELECT id, name FROM datasets WHERE id IN (
@@ -149,17 +169,11 @@ SELECT id, name FROM datasets WHERE id IN (
 6. **切换回** 你想用的 embedding 模型
 7. 再次点击 **保存**
 
-> 💡 **提示**：切换 embedding 模型是强制 Dify 重新嵌入所有文档的最简单方法。你可以切换到任何其他模型然后再切换回来。
-
-或者，你可以：
-- 删除并重新上传所有文档
-- 使用"重新索引"功能（如果你的 Dify 版本有的话）
+> 💡 **提示**：切换 embedding 模型会强制 Dify 重新嵌入所有文档。
 
 ---
 
 ## 手动修复（不使用脚本）
-
-如果你更喜欢手动修复：
 
 ### 1. 检查 Collection 格式
 
@@ -167,8 +181,6 @@ SELECT id, name FROM datasets WHERE id IN (
 docker exec docker-api-1 curl -s -H "Authorization: Bearer YOUR_API_KEY" \
   "http://weaviate:8080/v1/schema/Vector_index_XXXX_Node"
 ```
-
-如果看到 `vectorIndexConfig` 但没有 `vectorConfig`，则需要修复。
 
 ### 2. 删除旧 Collection
 
@@ -211,8 +223,6 @@ docker exec docker-api-1 curl -s -X POST \
 
 ## 清理：删除孤立的 Collections
 
-修复后，你可能有孤立的 collections（存在于 Weaviate 但在 Dify 中已删除）。查找方法：
-
 ```bash
 # 列出 Weaviate 中所有 dataset IDs
 docker exec docker-api-1 curl -s -H "Authorization: Bearer YOUR_API_KEY" \
@@ -221,11 +231,8 @@ docker exec docker-api-1 curl -s -H "Authorization: Bearer YOUR_API_KEY" \
 
 # 与 Dify 数据库对比
 docker exec docker-db-1 psql -U postgres -d dify -c "SELECT id, name FROM datasets ORDER BY name;"
-```
 
-删除孤立的 collections：
-
-```bash
+# 删除孤立的 collections
 docker exec docker-api-1 curl -s -X DELETE \
   -H "Authorization: Bearer YOUR_API_KEY" \
   "http://weaviate:8080/v1/schema/Vector_index_ORPHANED_ID_Node"
@@ -237,8 +244,6 @@ docker exec docker-api-1 curl -s -X DELETE \
 
 ### 问题：重新嵌入后 Weaviate 中没有数据
 
-检查 PostgreSQL 中是否有文档但 Weaviate 中没有：
-
 ```bash
 # PostgreSQL 中的数量
 docker exec docker-db-1 psql -U postgres -d dify -c \
@@ -249,11 +254,7 @@ docker exec docker-api-1 curl -s -H "Authorization: Bearer YOUR_API_KEY" \
   "http://weaviate:8080/v1/objects?class=Vector_index_XXXX_Node&limit=1"
 ```
 
-如果 PostgreSQL 有数据但 Weaviate 没有，尝试按步骤 6 切换 embedding 模型。
-
 ### 问题：脚本无法连接 Weaviate
-
-确保在 Docker 网络内运行脚本：
 
 ```bash
 docker exec -it docker-api-1 python /tmp/batch_fix_weaviate.py scan
@@ -261,27 +262,28 @@ docker exec -it docker-api-1 python /tmp/batch_fix_weaviate.py scan
 
 ### 问题：认证失败
 
-检查你的 API key：
-
 ```bash
 docker exec docker-api-1 env | grep WEAVIATE_API_KEY
 ```
-
-如需要，更新脚本中的 `API_KEY` 变量。
 
 ---
 
 ## 参考资料
 
+- [官方 Weaviate 迁移指南 (Dify Docs)](https://docs.dify.ai/en/learn-more/faq/install-faq/weaviate-migration-guide)
+- [官方迁移脚本](https://github.com/langgenius/dify-docs/blob/main/assets/migrate_weaviate_collections.py)
+- [社区迁移指南 by @kurokobo](https://gist.github.com/kurokobo/51fbe7f92f4526957e12dacfa7783cdf)
 - [Weaviate Named Vectors 文档](https://weaviate.io/developers/weaviate/config-refs/schema/multi-vector)
 - [Dify GitHub 仓库](https://github.com/langgenius/dify)
-- [修复脚本仓库](https://github.com/yupoet/dify-weaviate-fix)
 
 ---
 
 ## 致谢
 
-脚本和指南由 [@yupoet](https://github.com/yupoet) 编写
+- 脚本和指南由 [@yupoet](https://github.com/yupoet) 编写
+- [Dify Team](https://github.com/langgenius/dify) - 官方迁移指南
+- [@kurokobo](https://github.com/kurokobo) - 社区迁移指南
+- 中文 Dify 社区 - LSM 恢复方法
 
 如果对你有帮助，请给仓库点个 ⭐！
 
