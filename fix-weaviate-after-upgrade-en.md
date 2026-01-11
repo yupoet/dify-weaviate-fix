@@ -2,9 +2,35 @@
 
 [中文版本](./fix-weaviate-after-upgrade-zh.md)
 
+---
+
+## ⚠️ Important: Official Solution Available
+
+**This is a simplified quick-fix approach.** An official migration guide with data preservation is available:
+
+- 📖 [Official Migration Guide (Dify Docs)](https://docs.dify.ai/en/learn-more/faq/install-faq/weaviate-migration-guide)
+- 📜 [Official Migration Script](https://github.com/langgenius/dify-docs/blob/main/assets/migrate_weaviate_collections.py)
+- 📝 [Community-edited Guide (by @kurokobo)](https://gist.github.com/kurokobo/51fbe7f92f4526957e12dacfa7783cdf)
+
+### Comparison
+
+| | Official Solution | This Solution |
+|---|---|---|
+| **Approach** | Migrate data (preserve vectors) | Rebuild schema + re-embed |
+| **Preserves vectors** | ✅ Yes | ❌ No |
+| **Best for** | Large datasets, production | Small datasets, dev/test |
+| **Complexity** | Higher | Lower |
+
+**Choose this solution if:**
+- You have a small deployment with few knowledge bases
+- You're planning to switch embedding models anyway
+- Re-embedding cost/time is acceptable
+
+---
+
 ## Problem Description
 
-After upgrading Dify from an older version (e.g., 1.8.x, 1.10.x) to a newer version (e.g., 1.11.0+), you may encounter the following error when testing recall/retrieval in your Knowledge Base:
+After upgrading Dify (e.g., from 1.8.x/1.10.x to 1.11.0+), you may encounter this error when testing knowledge base retrieval:
 
 ```
 Query call with protocol GRPC search failed with message extract target vectors: class 
@@ -12,11 +38,9 @@ Vector_index_XXXXXXXX_XXXX_XXXX_XXXX_XXXXXXXXXXXX_Node does not have named vecto
 configured. Available named vectors map[].
 ```
 
-![Error Screenshot](https://your-screenshot-url.png)
-
 ## Root Cause
 
-This issue is caused by a **schema format change in Weaviate**. 
+This is caused by a **Weaviate schema format change**. 
 
 - **Old format**: Uses `vectorIndexConfig` at the top level
 - **New format**: Uses `vectorConfig.default` with nested configuration
@@ -52,15 +76,15 @@ When Dify upgrades, it expects the new `vectorConfig` format, but knowledge base
 }
 ```
 
-## Solution Overview
+## Solution Overview (Quick Fix Approach)
 
-The fix involves three steps:
+This approach involves three steps:
 
 1. **Identify** affected collections (old format)
-2. **Recreate** collections with the new schema format
+2. **Recreate** collections with the new schema format (data is cleared)
 3. **Re-embed** documents in Dify to repopulate vector data
 
-> ⚠️ **Important**: This process will clear the vector data in affected collections. You must re-embed documents in Dify after fixing the schema.
+> ⚠️ **Important**: This approach will clear vector data. You must re-embed documents afterwards. If you need to preserve vectors, use the [official migration guide](https://docs.dify.ai/en/learn-more/faq/install-faq/weaviate-migration-guide) instead.
 
 ---
 
@@ -81,8 +105,6 @@ docker exec docker-api-1 env | grep -i weaviate
 Look for `WEAVIATE_API_KEY` in the output. You'll need this for the fix script.
 
 ### Step 2: Scan for Affected Collections
-
-First, let's see which collections need fixing:
 
 ```bash
 # Download the fix script
@@ -126,8 +148,6 @@ The script will:
 
 ### Step 5: Get Knowledge Base Names
 
-The script outputs dataset IDs. To find the actual names in Dify:
-
 ```bash
 docker exec docker-db-1 psql -U postgres -d dify -c "
 SELECT id, name FROM datasets WHERE id IN (
@@ -149,17 +169,11 @@ For each affected knowledge base:
 6. **Switch back** to your preferred embedding model
 7. Click **Save** again
 
-> 💡 **Tip**: Switching the embedding model is the easiest way to force Dify to re-embed all documents. You can switch to any other model and then switch back.
-
-Alternatively, you can:
-- Delete and re-upload all documents
-- Use the "Re-index" feature if available in your Dify version
+> 💡 **Tip**: Switching the embedding model forces Dify to re-embed all documents.
 
 ---
 
 ## Manual Fix (Without Script)
-
-If you prefer to fix manually:
 
 ### 1. Check Collection Format
 
@@ -167,8 +181,6 @@ If you prefer to fix manually:
 docker exec docker-api-1 curl -s -H "Authorization: Bearer YOUR_API_KEY" \
   "http://weaviate:8080/v1/schema/Vector_index_XXXX_Node"
 ```
-
-If you see `vectorIndexConfig` but no `vectorConfig`, it needs fixing.
 
 ### 2. Delete Old Collection
 
@@ -211,8 +223,6 @@ Follow Step 6 above.
 
 ## Cleanup: Remove Orphaned Collections
 
-After fixing, you may have orphaned collections (exist in Weaviate but deleted in Dify). To find them:
-
 ```bash
 # List all Weaviate dataset IDs
 docker exec docker-api-1 curl -s -H "Authorization: Bearer YOUR_API_KEY" \
@@ -221,11 +231,8 @@ docker exec docker-api-1 curl -s -H "Authorization: Bearer YOUR_API_KEY" \
 
 # Compare with Dify database
 docker exec docker-db-1 psql -U postgres -d dify -c "SELECT id, name FROM datasets ORDER BY name;"
-```
 
-Delete orphaned collections:
-
-```bash
+# Delete orphaned collections
 docker exec docker-api-1 curl -s -X DELETE \
   -H "Authorization: Bearer YOUR_API_KEY" \
   "http://weaviate:8080/v1/schema/Vector_index_ORPHANED_ID_Node"
@@ -237,8 +244,6 @@ docker exec docker-api-1 curl -s -X DELETE \
 
 ### Issue: Re-embedding doesn't populate Weaviate
 
-Check if documents exist in PostgreSQL but not in Weaviate:
-
 ```bash
 # Count in PostgreSQL
 docker exec docker-db-1 psql -U postgres -d dify -c \
@@ -249,11 +254,7 @@ docker exec docker-api-1 curl -s -H "Authorization: Bearer YOUR_API_KEY" \
   "http://weaviate:8080/v1/objects?class=Vector_index_XXXX_Node&limit=1"
 ```
 
-If PostgreSQL has data but Weaviate doesn't, try switching embedding models as described in Step 6.
-
 ### Issue: Script can't connect to Weaviate
-
-Make sure you're running the script inside the Docker network:
 
 ```bash
 docker exec -it docker-api-1 python /tmp/batch_fix_weaviate.py scan
@@ -261,27 +262,28 @@ docker exec -it docker-api-1 python /tmp/batch_fix_weaviate.py scan
 
 ### Issue: Authentication failed
 
-Check your API key:
-
 ```bash
 docker exec docker-api-1 env | grep WEAVIATE_API_KEY
 ```
-
-Update the `API_KEY` variable in the script if needed.
 
 ---
 
 ## References
 
+- [Official Weaviate Migration Guide (Dify Docs)](https://docs.dify.ai/en/learn-more/faq/install-faq/weaviate-migration-guide)
+- [Official Migration Script](https://github.com/langgenius/dify-docs/blob/main/assets/migrate_weaviate_collections.py)
+- [Community Migration Guide by @kurokobo](https://gist.github.com/kurokobo/51fbe7f92f4526957e12dacfa7783cdf)
 - [Weaviate Named Vectors Documentation](https://weaviate.io/developers/weaviate/config-refs/schema/multi-vector)
 - [Dify GitHub Repository](https://github.com/langgenius/dify)
-- [Fix Script Repository](https://github.com/yupoet/dify-weaviate-fix)
 
 ---
 
 ## Credits
 
-Script and guide by [@yupoet](https://github.com/yupoet)
+- Script and guide by [@yupoet](https://github.com/yupoet)
+- [Dify Team](https://github.com/langgenius/dify) - Official migration guide
+- [@kurokobo](https://github.com/kurokobo) - Community migration guide
+- Chinese Dify community - LSM recovery method
 
 If this helped you, please ⭐ the repository!
 
