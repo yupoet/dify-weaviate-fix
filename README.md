@@ -4,11 +4,55 @@
 
 ---
 
+## ⚠️ Important Notice | 重要说明
+
+**There is an official migration guide available!** This repository provides a **simplified quick-fix approach** that may be suitable for smaller deployments.
+
+**已有官方迁移指南！** 本仓库提供的是一个**简化的快速修复方案**，适合小型部署。
+
+### Official Resources | 官方资源
+
+- 📖 [Official Migration Guide (Dify Docs)](https://docs.dify.ai/en/learn-more/faq/install-faq/weaviate-migration-guide)
+- 📜 [Official Migration Script](https://github.com/langgenius/dify-docs/blob/main/assets/migrate_weaviate_collections.py)
+- 📝 [Community-edited Guide (by @kurokobo)](https://gist.github.com/kurokobo/51fbe7f92f4526957e12dacfa7783cdf)
+
+### When to Use Which? | 何时使用哪个方案？
+
+| | Official Solution | This Solution |
+|---|---|---|
+| **Approach** | Migrate data (preserve vectors) | Rebuild schema + re-embed |
+| **Preserves vectors** | ✅ Yes | ❌ No, requires re-embedding |
+| **Best for** | Large datasets, production | Small datasets, dev/test |
+| **Complexity** | Higher (LSM fix + data migration) | Lower (just schema recreation) |
+| **Re-embedding cost** | None | Embedding API calls required |
+
+| | 官方方案 | 本方案 |
+|---|---|---|
+| **方法** | 迁移数据（保留向量） | 重建schema + 重新嵌入 |
+| **保留向量数据** | ✅ 是 | ❌ 否，需重新嵌入 |
+| **适用场景** | 大型数据集、生产环境 | 小型数据集、开发测试环境 |
+| **复杂度** | 较高（LSM修复 + 数据迁移） | 较低（仅重建schema） |
+| **重新嵌入成本** | 无 | 需要调用 Embedding API |
+
+**Use this solution if | 使用本方案的情况：**
+- ✅ Small deployment with few knowledge bases | 知识库数量较少的小型部署
+- ✅ Planning to switch embedding models anyway | 本来就想切换 embedding 模型
+- ✅ Re-embedding cost is acceptable | 可以接受重新嵌入的成本
+- ✅ Want a quick fix without complex migration | 想要快速修复而不做复杂迁移
+
+**Use official solution if | 使用官方方案的情况：**
+- ✅ Large datasets with many documents | 文档量大的大型部署
+- ✅ Need to preserve existing vectors | 需要保留现有向量数据
+- ✅ Production environment | 生产环境
+- ✅ Re-embedding would take too long or cost too much | 重新嵌入耗时过长或成本过高
+
+---
+
 ## English
 
-### Fix Knowledge Base Vector Search After Upgrading Dify
+### Quick Fix for Knowledge Base Vector Search After Upgrading Dify
 
-This tool fixes the `vectorConfig` schema incompatibility issue that occurs after upgrading Dify to a newer version.
+This tool provides a **simplified approach** to fix the `vectorConfig` schema incompatibility issue after upgrading Dify. It rebuilds the schema and requires re-embedding documents.
 
 #### The Problem
 
@@ -17,8 +61,6 @@ After upgrading Dify, you may see this error when testing knowledge base retriev
 ```
 Vector_index_xxx_Node does not have named vector default configured. Available named vectors map[].
 ```
-
-This happens because older Dify versions created Weaviate collections with a different schema format (`vectorIndexConfig`) than what newer versions expect (`vectorConfig.default`).
 
 #### Quick Start
 
@@ -47,7 +89,7 @@ After fixing, **re-embed documents** in Dify by switching the embedding model in
 | `scan` | List collections needing fix |
 | `dry-run` | Simulate fix (no changes) |
 | `fix` | Fix all affected collections |
-| `fix-one <name>` | Fix single collection |
+| `fix-one <n>` | Fix single collection |
 | `cleanup` | Remove orphaned collections |
 | `list-names` | Show dataset names |
 
@@ -55,9 +97,9 @@ After fixing, **re-embed documents** in Dify by switching the embedding model in
 
 ## 中文
 
-### 修复 Dify 升级后知识库向量检索问题
+### Dify 升级后知识库向量检索问题的快速修复
 
-此工具修复 Dify 升级到新版本后出现的 `vectorConfig` schema 不兼容问题。
+此工具提供了一个**简化方案**来修复 Dify 升级后的 `vectorConfig` schema 不兼容问题。它会重建 schema 并需要重新嵌入文档。
 
 #### 问题现象
 
@@ -66,8 +108,6 @@ After fixing, **re-embed documents** in Dify by switching the embedding model in
 ```
 Vector_index_xxx_Node does not have named vector default configured. Available named vectors map[].
 ```
-
-这是因为旧版 Dify 创建的 Weaviate collections 使用的 schema 格式（`vectorIndexConfig`）与新版本期望的格式（`vectorConfig.default`）不同。
 
 #### 快速开始
 
@@ -96,7 +136,7 @@ docker exec -it docker-api-1 python /tmp/batch_fix_weaviate.py fix
 | `scan` | 列出需要修复的 collections |
 | `dry-run` | 模拟修复（不实际执行） |
 | `fix` | 修复所有受影响的 collections |
-| `fix-one <name>` | 修复单个 collection |
+| `fix-one <n>` | 修复单个 collection |
 | `cleanup` | 删除孤立的 collections |
 | `list-names` | 显示知识库名称 |
 
@@ -128,5 +168,11 @@ MIT
 ## Author
 
 [@yupoet](https://github.com/yupoet)
+
+## Acknowledgments | 致谢
+
+- [Dify Team](https://github.com/langgenius/dify) - Official migration guide and script
+- [@kurokobo](https://github.com/kurokobo) - Community-edited migration guide
+- Chinese Dify community - LSM recovery method
 
 If this helped you, please ⭐ the repository!
